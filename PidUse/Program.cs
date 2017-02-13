@@ -1,8 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Diagnostics;
 
 namespace PidUse
@@ -11,11 +7,15 @@ namespace PidUse
 	{
 		static void Main(string[] args)
 		{
-			Process proc = Process.GetProcessById(5728);
+			Process[] proc = Process.GetProcessesByName(@"Skype"); //uTorrent
 
-			Console.WriteLine($"{proc.ProcessName}");
+			Console.WriteLine($"{proc[0].ProcessName}");
 
-			var files = Win32Processes.GetFilesLockedBy(proc);
+			var task = Win32Processes.GetFilesLockedBy(proc[0]);
+			
+			task.Wait();
+
+			var files = task.Result;
 
 			foreach(var file in files)
 			{

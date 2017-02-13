@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
+
 
 namespace PidUse
 {
@@ -14,7 +15,7 @@ namespace PidUse
 		/// <summary>
 		/// Return a list of processes that hold on the given file.
 		/// </summary>
-		public static List<Process> GetProcessesLockingFile(string filePath)
+		public static async Task<List<Process>> GetProcessesLockingFile(string filePath)
 		{
 			var procs = new List<Process>();
 
@@ -22,47 +23,21 @@ namespace PidUse
 			foreach (var process in processListSnapshot)
 			{
 				if (process.Id <= 4) { continue; } // system processes
-				var files = GetFilesLockedBy(process);
+				var files = await GetFilesLockedBy(process);
 				if (files.Contains(filePath)) procs.Add(process);
 			}
+
 			return procs;
 		}
 
 		/// <summary>
 		/// Return a list of file locks held by the process.
 		/// </summary>
-		public static List<string> GetFilesLockedBy(Process process)
+		public static Task<List<string>> GetFilesLockedBy(Process process)
 		{
-			var outp = new List<string>();
-
-			ThreadStart ts = delegate
-			{
-				try
-				{
-					outp = UnsafeGetFilesLockedBy(process);
-				}
-				catch { Ignore(); }
-			};
-
-
-			try
-			{
-				var t = new Thread(ts);
-				t.IsBackground = true;
-				t.Start();
-				if (!t.Join(250))
-				{
-					try
-					{
-						t.Interrupt();
-						t.Abort();
-					}
-					catch { Ignore(); }
-				}
-			}
-			catch { Ignore(); }
-
-			return outp;
+			return Task.Factory.StartNew(() => {
+				return UnsafeGetFilesLockedBy(process);
+			});
 		}
 
 
@@ -172,62 +147,15 @@ namespace PidUse
 
 			if (ipTemp != IntPtr.Zero)
 			{
-
 				var baTemp = new byte[nLength];
-				//try
-				//{
-					Marshal.Copy(ipTemp, baTemp, 0, nLength);
 
-					strObjectName = Marshal.PtrToStringUni(Is64Bits() ? new IntPtr(ipTemp.ToInt64()) : new IntPtr(ipTemp.ToInt32()));
-				//}
-				//catch (AccessViolationException)
-				//{
-				//	return null;
-				//}
-				//finally
-				//{
-				//	Marshal.FreeHGlobal(ipObjectName);
-				//	Win32API.CloseHandle(ipHandle);
-				//}
+				Marshal.Copy(ipTemp, baTemp, 0, nLength);
+				strObjectName = Marshal.PtrToStringUni(Is64Bits() ? new IntPtr(ipTemp.ToInt64()) : new IntPtr(ipTemp.ToInt32()));
 			}
 
-			Console.WriteLine($"raw: {strObjectName}");
-
-			string path = GetRegularFileNameFromDevice(strObjectName);
-			try
-			{
-				return path;
-			}
-			catch
-			{
-				return null;
-			}
+			return strObjectName;
 		}
 
-		private static string GetRegularFileNameFromDevice(string strRawName)
-		{
-			string strFileName = strRawName;
-			foreach (string strDrivePath in Environment.GetLogicalDrives())
-			{
-				
-
-				var sbTargetPath = new StringBuilder(Win32API.MAX_PATH);
-				if (Win32API.QueryDosDevice(strDrivePath.Substring(0, 2), sbTargetPath, Win32API.MAX_PATH) == 0)
-				{
-					return strRawName;
-				}
-				string strTargetPath = sbTargetPath.ToString();
-
-				Console.WriteLine(strTargetPath);
-				//TODO: раскопать нормальный маппинг 
-				if (strFileName.StartsWith(strTargetPath))
-				{
-					strFileName = strFileName.Replace(strTargetPath, strDrivePath.Substring(0, 2));
-					break;
-				}
-			}
-			return strFileName;
-		}
 
 		private static IEnumerable<Win32API.SYSTEM_HANDLE_INFORMATION> GetHandles(Process process)
 		{
